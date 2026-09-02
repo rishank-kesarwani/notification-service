@@ -35,20 +35,20 @@ A high-performance, non-blocking, and resilient multi-channel notification engin
 
 ```mermaid
 flowchart TD
-    Client[Client / Microservices] -->|POST /v1/notifications| API[Express API Server]
-    API --> Auth[Auth Middleware (API Key / JWT)]
-    Auth --> Val[Zod Payload Validation]
-    Val --> Idem[Idempotency Service (Redis SET NX EX)]
-    Idem --> Pref[User Preferences Service (Redis Cache)]
-    Pref --> Router[Notification Router / Dispatcher]
+    Client["Client / Microservices"] -->|POST /v1/notifications| API["Express API Server"]
+    API --> Auth["Auth Middleware (API Key / JWT)"]
+    Auth --> Val["Zod Payload Validation"]
+    Val --> Idem["Idempotency Service (Redis SET NX EX)"]
+    Idem --> Pref["User Preferences Service (Redis Cache)"]
+    Pref --> Router["Notification Router / Dispatcher"]
     
-    subgraph Queues [Dedicated BullMQ Queues]
-        ECQ[(email_critical)]
-        EBQ[(email_bulk)]
-        PCQ[(push_critical)]
-        PBQ[(push_bulk)]
-        EDLQ[(email_dlq)]
-        PDLQ[(push_dlq)]
+    subgraph Queues ["Dedicated BullMQ Queues"]
+        ECQ[("email_critical")]
+        EBQ[("email_bulk")]
+        PCQ[("push_critical")]
+        PBQ[("push_bulk")]
+        EDLQ[("email_dlq")]
+        PDLQ[("push_dlq")]
     end
 
     Router -->|Email OTP/Security| ECQ
@@ -56,21 +56,21 @@ flowchart TD
     Router -->|Push Security/Alert| PCQ
     Router -->|Push Update/Marketing| PBQ
 
-    subgraph Email Workers [Email Worker Cluster]
-        EW[Email Processor] --> ES[Email Strategy]
-        ES --> ERL{Redis Rate Limit}
-        ERL -->|Allowed| ECB{Resend Circuit Breaker}
-        ECB -->|CLOSED / HALF-OPEN| Resend[Resend SDK (Primary)]
-        Resend -->|Error / Timeout / Breaker OPEN| SCB{SMTP Circuit Breaker}
-        SCB -->|CLOSED / HALF-OPEN| SMTP[Nodemailer SMTP (Fallback)]
+    subgraph EmailWorkers ["Email Worker Cluster"]
+        EW["Email Processor"] --> ES["Email Strategy"]
+        ES --> ERL{"Redis Rate Limit"}
+        ERL -->|Allowed| ECB{"Resend Circuit Breaker"}
+        ECB -->|CLOSED / HALF-OPEN| Resend["Resend SDK (Primary)"]
+        Resend -->|Error / Timeout / Breaker OPEN| SCB{"SMTP Circuit Breaker"}
+        SCB -->|CLOSED / HALF-OPEN| SMTP["Nodemailer SMTP (Fallback)"]
         SCB -->|Max Retries Exceeded| EDLQ
     end
 
-    subgraph Push Workers [Push Worker Cluster]
-        PW[Push Processor] --> PS[Push Strategy]
-        PS --> PRL{Redis Rate Limit}
-        PRL -->|Allowed| FCB{FCM Circuit Breaker}
-        FCB -->|CLOSED / HALF-OPEN| FCM[Firebase Admin FCM]
+    subgraph PushWorkers ["Push Worker Cluster"]
+        PW["Push Processor"] --> PS["Push Strategy"]
+        PS --> PRL{"Redis Rate Limit"}
+        PRL -->|Allowed| FCB{"FCM Circuit Breaker"}
+        FCB -->|CLOSED / HALF-OPEN| FCM["Firebase Admin FCM"]
         FCB -->|Max Retries Exceeded| PDLQ
     end
 
@@ -98,20 +98,20 @@ classDiagram
     class INotificationChannelStrategy {
         <<interface>>
         +channel: NotificationChannel
-        +process(jobData): Promise~ProviderResponse~
+        +process(jobData: ChannelJobData): Promise
     }
 
     class EmailNotificationStrategy {
-        +channel: 'EMAIL'
+        +channel: NotificationChannel
         +resendCircuitBreaker: CircuitBreaker
         +smtpCircuitBreaker: CircuitBreaker
-        +process(jobData: EmailJobData): Promise~ProviderResponse~
+        +process(jobData: EmailJobData): Promise
     }
 
     class PushNotificationStrategy {
-        +channel: 'PUSH'
+        +channel: NotificationChannel
         +fcmCircuitBreaker: CircuitBreaker
-        +process(jobData: PushJobData): Promise~ProviderResponse~
+        +process(jobData: PushJobData): Promise
     }
 
     class NotificationStrategyRegistry {
@@ -139,15 +139,25 @@ The **Circuit Breaker Pattern** safeguards the service against cascading failure
 stateDiagram-v2
     [*] --> CLOSED: Initial State
     
-    CLOSED --> OPEN: Failure threshold reached (e.g., 3 consecutive errors)
-    note right of CLOSED: Requests pass through to vendor.\nFailures increment counter.
+    CLOSED --> OPEN: Failure threshold reached (e.g. 3 consecutive errors)
+    note right of CLOSED
+      Requests pass through to vendor.
+      Failures increment counter.
+    end note
     
-    OPEN --> HALF_OPEN: Cooldown timer expires (e.g., 20-30s)
-    note right of OPEN: Fast-fail immediately.\nDo not hit downstream vendor.\nRoute immediately to fallback.
+    OPEN --> HALF_OPEN: Cooldown timer expires (e.g. 20-30s)
+    note right of OPEN
+      Fast-fail immediately.
+      Do not hit downstream vendor.
+      Route immediately to fallback.
+    end note
     
-    HALF_OPEN --> CLOSED: Probe request succeeds (target success count met)
+    HALF_OPEN --> CLOSED: Probe request succeeds (target met)
     HALF_OPEN --> OPEN: Probe request fails
-    note right of HALF_OPEN: Allow single probe request\nto test vendor recovery.
+    note right of HALF_OPEN
+      Allow single probe request
+      to test vendor recovery.
+    end note
 ```
 
 #### Key Characteristics in this Service:
