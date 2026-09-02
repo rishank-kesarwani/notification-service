@@ -9,6 +9,10 @@
     "start:workers": "node dist/workers/worker-runner.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:workers": "ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:email:critical": "WORKER_TYPE=email_critical ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:email:bulk": "WORKER_TYPE=email_bulk ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:push:critical": "WORKER_TYPE=push_critical ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:push:bulk": "WORKER_TYPE=push_bulk ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

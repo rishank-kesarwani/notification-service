@@ -42,7 +42,7 @@ flowchart TD
     Idem --> Pref["User Preferences Service (Redis Cache)"]
     Pref --> Router["Notification Router / Dispatcher"]
     
-    subgraph Queues ["Dedicated BullMQ Queues"]
+    subgraph Queues ["Isolated Channel & Priority Queues"]
         ECQ[("email_critical")]
         EBQ[("email_bulk")]
         PCQ[("push_critical")]
@@ -56,29 +56,69 @@ flowchart TD
     Router -->|Push Security/Alert| PCQ
     Router -->|Push Update/Marketing| PBQ
 
-    subgraph EmailWorkers ["Email Worker Cluster"]
-        EW["Email Processor"] --> ES["Email Strategy"]
-        ES --> ERL{"Redis Rate Limit"}
-        ERL -->|Allowed| ECB{"Resend Circuit Breaker"}
-        ECB -->|CLOSED / HALF-OPEN| Resend["Resend SDK (Primary)"]
-        Resend -->|Error / Timeout / Breaker OPEN| SCB{"SMTP Circuit Breaker"}
-        SCB -->|CLOSED / HALF-OPEN| SMTP["Nodemailer SMTP (Fallback)"]
-        SCB -->|Max Retries Exceeded| EDLQ
+    subgraph EmailWorkers ["Independent Email Worker Clusters"]
+        ECW["Email Critical Worker Cluster<br/>(Concurrency: 25 | Priority: Real-time)"]
+        EBW["Email Bulk Worker Cluster<br/>(Concurrency: 5 | Rate Paced)"]
     end
 
-    subgraph PushWorkers ["Push Worker Cluster"]
-        PW["Push Processor"] --> PS["Push Strategy"]
-        PS --> PRL{"Redis Rate Limit"}
-        PRL -->|Allowed| FCB{"FCM Circuit Breaker"}
-        FCB -->|CLOSED / HALF-OPEN| FCM["Firebase Admin FCM"]
-        FCB -->|Max Retries Exceeded| PDLQ
+    subgraph PushWorkers ["Independent Push Worker Clusters"]
+        PCW["Push Critical Worker Cluster<br/>(Concurrency: 30 | Priority: Real-time)"]
+        PBW["Push Bulk Worker Cluster<br/>(Concurrency: 10 | Rate Paced)"]
     end
 
-    ECQ --> EW
-    EBQ --> EW
-    PCQ --> PW
-    PBQ --> PW
+    ECQ --> ECW
+    EBQ --> EBW
+    PCQ --> PCW
+    PBQ --> PBW
+
+    subgraph EmailProviders ["Email Delivery Pipeline"]
+        ES["Email Strategy"]
+        ERL{"Redis Rate Limit"}
+        ECB{"Resend Circuit Breaker"}
+        Resend["Resend SDK (Primary)"]
+        SCB{"SMTP Circuit Breaker"}
+        SMTP["Nodemailer SMTP (Fallback)"]
+    end
+
+    subgraph PushProviders ["Push Delivery Pipeline"]
+        PS["Push Strategy"]
+        PRL{"Redis Rate Limit"}
+        FCB{"FCM Circuit Breaker"}
+        FCM["Firebase Admin FCM"]
+    end
+
+    ECW --> ES
+    EBW --> ES
+    ES --> ERL
+    ERL -->|Allowed| ECB
+    ECB -->|CLOSED / HALF-OPEN| Resend
+    Resend -->|Error / Timeout / Breaker OPEN| SCB
+    SCB -->|CLOSED / HALF-OPEN| SMTP
+    SCB -->|Max Retries Exceeded| EDLQ
+
+    PCW --> PS
+    PBW --> PS
+    PS --> PRL
+    PRL -->|Allowed| FCB
+    FCB -->|CLOSED / HALF-OPEN| FCM
+    FCB -->|Max Retries Exceeded| PDLQ
 ```
+
+---
+
+## Zero-Bottleneck Worker Segregation
+
+> [!IMPORTANT]
+> **Why 4 Independent Worker Clusters?**
+> If Critical (OTPs/Security) and Bulk (Newsletters/Promos) jobs were processed by a shared generic worker pool, a batch of 50,000 marketing emails would consume all worker threads and Redis connections, delaying critical OTPs by minutes.
+> 
+> In this architecture:
+> 1. **`EmailCriticalWorker`**: Operates on a dedicated process pool (concurrency: 25). Instant OTP delivery.
+> 2. **`EmailBulkWorker`**: Operates on an isolated throttled pool (concurrency: 5). Prevents vendor rate bans.
+> 3. **`PushCriticalWorker`**: Operates on a dedicated process pool (concurrency: 30). Real-time 2FA/fraud alerts.
+> 4. **`PushBulkWorker`**: Operates on an isolated throttled pool (concurrency: 10). Background marketing pushes.
+> 
+> Each worker cluster can be scaled, deployed, and restarted **independently** across separate server nodes or Kubernetes pods.
 
 ---
 
@@ -250,9 +290,12 @@ To prevent a single busy channel or marketing blast from choking time-sensitive 
     │   ├── notification.ts         # TypeScript interfaces & types
     │   └── zod-schemas.ts          # Zod validation schemas
     └── workers
-        ├── email.worker.ts         # Dedicated Email BullMQ worker
-        ├── push.worker.ts          # Dedicated Push BullMQ worker
-        └── worker-runner.ts        # Standalone worker cluster runner
+        ├── email-critical.worker.ts # Dedicated Email Critical BullMQ worker (OTPs, Security)
+        ├── email-bulk.worker.ts     # Dedicated Email Bulk BullMQ worker (Newsletters, Promos)
+        ├── push-critical.worker.ts  # Dedicated Push Critical BullMQ worker (2FA, Fraud)
+        ├── push-bulk.worker.ts      # Dedicated Push Bulk BullMQ worker (Marketing, Updates)
+        ├── index.ts                 # Worker registry exports
+        └── worker-runner.ts         # Multi-target standalone worker cluster runner
 ```
 
 ---
@@ -318,13 +361,20 @@ npm run dev        # Development mode (ts-node-dev with hot-reload)
 npm start          # Production mode (compiled JS from dist/)
 ```
 
-#### Mode B: Decoupled Worker Clusters
-Ideal for horizontally scalable production architectures:
+#### Mode B: Decoupled Independent Worker Clusters
+Ideal for horizontally scalable production architectures where each queue has its own dedicated autoscaling group or pod:
+
 ```bash
-# Terminal 1: Ingestion API Nodes (Zero worker overhead)
+# Ingestion API Nodes (Zero worker processing overhead)
 WORKERS_EMBEDDED=false npm run dev
 
-# Terminal 2: Dedicated Worker Cluster Nodes
+# Independent Worker Nodes:
+npm run worker:email:critical   # Dedicated Email Critical Worker (OTPs, Security)
+npm run worker:email:bulk       # Dedicated Email Bulk Worker (Newsletters, Promos)
+npm run worker:push:critical    # Dedicated Push Critical Worker (Security, 2FA)
+npm run worker:push:bulk        # Dedicated Push Bulk Worker (Marketing, Updates)
+
+# Or run all 4 worker clusters in one process:
 npm run dev:workers
 ```
 

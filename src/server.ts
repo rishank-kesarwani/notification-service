@@ -2,22 +2,33 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { queueRegistry } from './queues/queue.registry';
-import { EmailWorker } from './workers/email.worker';
-import { PushWorker } from './workers/push.worker';
+import {
+  EmailCriticalWorker,
+  EmailBulkWorker,
+  PushCriticalWorker,
+  PushBulkWorker,
+} from './workers';
 
 const app = createApp();
 
-// Start workers embedded in server for local development or can be disabled via WORKERS_EMBEDDED=false
+// Start workers embedded in server for local development or disable via WORKERS_EMBEDDED=false
 const startEmbeddedWorkers = process.env.WORKERS_EMBEDDED !== 'false';
-let emailWorker: EmailWorker | null = null;
-let pushWorker: PushWorker | null = null;
+let emailCriticalWorker: EmailCriticalWorker | null = null;
+let emailBulkWorker: EmailBulkWorker | null = null;
+let pushCriticalWorker: PushCriticalWorker | null = null;
+let pushBulkWorker: PushBulkWorker | null = null;
 
 if (startEmbeddedWorkers) {
-  logger.info('Starting embedded workers alongside API server...');
-  emailWorker = new EmailWorker();
-  pushWorker = new PushWorker();
-  emailWorker.start();
-  pushWorker.start();
+  logger.info('Starting independent dedicated worker clusters alongside API server...');
+  emailCriticalWorker = new EmailCriticalWorker();
+  emailBulkWorker = new EmailBulkWorker();
+  pushCriticalWorker = new PushCriticalWorker();
+  pushBulkWorker = new PushBulkWorker();
+
+  emailCriticalWorker.start();
+  emailBulkWorker.start();
+  pushCriticalWorker.start();
+  pushBulkWorker.start();
 }
 
 const server = app.listen(env.PORT, () => {
@@ -35,8 +46,10 @@ const shutdown = async (signal: string) => {
     logger.info('HTTP server closed');
 
     try {
-      if (emailWorker) await emailWorker.close();
-      if (pushWorker) await pushWorker.close();
+      if (emailCriticalWorker) await emailCriticalWorker.close();
+      if (emailBulkWorker) await emailBulkWorker.close();
+      if (pushCriticalWorker) await pushCriticalWorker.close();
+      if (pushBulkWorker) await pushBulkWorker.close();
       await queueRegistry.close();
       logger.info('All queue and worker resources released. Exiting.');
       process.exit(0);
