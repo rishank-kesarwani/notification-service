@@ -5,9 +5,10 @@ A high-performance, non-blocking, and resilient multi-channel notification engin
 ---
 
 ## Table of Contents
-- [System Architecture (High-Level Design)](#system-architecture-high-level-design)
-  - [1. High-Level Design (HLD) Architecture Diagram](#1-high-level-design-hld-architecture-diagram)
-  - [2. End-to-End Sequence & Request Lifecycle Diagram](#2-end-to-end-sequence--request-lifecycle-diagram)
+- [Architecture Overview & High-Level Design (HLD)](#architecture-overview--high-level-design-hld)
+  - [1. ASCII System Architecture Overview](#1-ascii-system-architecture-overview)
+  - [2. Visual High-Level Design (HLD) Architecture Diagram (Mermaid)](#2-visual-high-level-design-hld-architecture-diagram-mermaid)
+  - [3. End-to-End Sequence & Request Lifecycle Diagram](#3-end-to-end-sequence--request-lifecycle-diagram)
 - [Deep-Dive Component Explanations](#deep-dive-component-explanations)
   - [1. API Ingestion Gateway & Security Middleware](#1-api-ingestion-gateway--security-middleware)
   - [2. Distributed Idempotency Engine](#2-distributed-idempotency-engine)
@@ -46,16 +47,90 @@ A high-performance, non-blocking, and resilient multi-channel notification engin
 
 ---
 
-## System Architecture (High-Level Design)
+## Architecture Overview & High-Level Design (HLD)
 
-### 1. High-Level Design (HLD) Architecture Diagram
+### 1. ASCII System Architecture Overview
+
+```text
+=================================================================================================================
+                                     HIGH-LEVEL DESIGN (HLD) ARCHITECTURE
+=================================================================================================================
+
+ [ 1. Upstream Client Tier ]
+ +--------------------+       +---------------------+       +-------------------------------------------+
+ |  Web Application   |       |  Mobile App (iOS)   |       | Microservices (Auth, Billing, Checkout)   |
+ +---------+----------+       +----------+----------+       +---------------------+---------------------+
+           |                             |                                        |
+           +-----------------------------+----------------------------------------+
+                                         | (HTTPS POST /v1/notifications)
+                                         v
+ [ 2. API Ingestion Gateway Tier ]
+ +------------------------------------------------------------------------------------------------------+
+ |  Express.js API Server                                                                               |
+ |  ├── Security: Helmet (Secure Headers), CORS Origin Filter, JSON Body Parser                         |
+ |  ├── Authentication Middleware: Dual Mode (Header `x-api-key` OR RFC 6750 Bearer JWT)               |
+ |  ├── Validation Middleware: Zod Schema Validator (Cross-field conditional constraints)               |
+ |  └── Ingestion Controller: Payload Unpacking, Notification UUID Generation (`notif_<ts>_<rand>`)  |
+ +-------+-------------------------------+----------------------------------------+---------------------+
+         |                               |                                        |
+         | 1. Check & Acquire Lock       | 2. Query User Opt-outs                 | 3. Enqueue Jobs
+         v                               v                                        v
+ [ 3. Distributed State Layer - Redis Cluster / IORedis ]                  [ 4. Queue Isolation Tier - BullMQ ]
+ +-------------------------------+  +----------------------------------+  +-------------------------------------+
+ | Idempotency Engine            |  | Preference & Opt-out Cache       |  | Priority & Channel Segregation      |
+ | ├── Key: `idempotency:<key>`  |  | ├── Key: `user:preferences:<id>` |  | ├── `email_critical` (OTP/2FA/Reset)|
+ | ├── Command: SET NX EX 300    |  | ├── Default TTL: 3600 seconds    |  | ├── `email_bulk` (Newsletters)      |
+ | └── Lock States:              |  | └── Priority Bypass:             |  | ├── `push_critical` (Fraud/Security)|
+ |     PENDING / PROCESSED       |  |     CRITICAL bypasses bulk optout|  | ├── `push_bulk` (Marketing/Promos)  |
+ +-------------------------------+  +----------------------------------+  | ├── `email_dlq` (Poison Pill DLQ)   |
+                                                                          | └── `push_dlq`  (Poison Pill DLQ)   |
+                                                                          +------------------+------------------+
+                                                                                             |
+                                                                                             | Dequeued by
+                                                                                             v
+ [ 5. Dedicated Autonomous Worker Fleet Tier ]
+ +------------------------------------------------------------------------------------------------------+
+ |  Independent Scalable Worker Clusters (Decoupled process pools & zero cross-queue contention)        |
+ |  ├── EmailCriticalWorker (Concurrency: 25 | Real-time Priority | Retry: Exponential Backoff 1s,2s,4s)|
+ |  ├── EmailBulkWorker     (Concurrency: 5  | Rate-paced Batch   | Retry: Fixed Delay 5s)             |
+ |  ├── PushCriticalWorker  (Concurrency: 30 | Real-time Priority | Retry: Exponential Backoff 1s,2s,4s)|
+ |  └── PushBulkWorker      (Concurrency: 10 | Rate-paced Batch   | Retry: Fixed Delay 5s)             |
+ +-------+-----------------------------------------------------------------------------------+----------+
+         |                                                                                   |
+         v (Executes Channel Strategy)                                                       v
+ [ 6. Channel Strategy & Resiliency Engine ]
+ +------------------------------------------------------------------------------------------------------+
+ |  Notification Strategy Registry                                                                      |
+ |                                                                                                      |
+ |  [ EMAIL NOTIFICATION STRATEGY ]                         [ PUSH NOTIFICATION STRATEGY ]              |
+ |  ├── 1. Redis Sliding-Window Rate Check (Lua Script)     ├── 1. Redis Sliding-Window Rate Check      |
+ |  ├── 2. Resend API Circuit Breaker (Primary)             ├── 2. Firebase FCM Circuit Breaker         |
+ |  │      - Threshold: 3 failures | Cooldown: 20s          │      - Threshold: 4 failures | Cooldown:25s
+ |  └── 3. Nodemailer SMTP Circuit Breaker (Fallback)       └── 3. FCM Native Multicast / Unicast Stream|
+ |         - Threshold: 3 failures | Cooldown: 30s                                                      |
+ +-------+----------------------------------+-----------------------------------------------+-----------+
+         |                                  |                                               |
+         | (Primary Dispatch)               | (Fallback on Resend Fail/Trip)                | (Push Dispatch)
+         v                                  v                                               v
+ [ 7. Downstream Third-Party Vendor Tier ]                                 [ 8. Dead Letter Queue Tier ]
+ +-----------------------+        +-----------------------+        +--------------------+   +-------------------+
+ | Primary: Resend API   |        | Fallback: SMTP Server |        | Firebase Admin FCM |   | BullMQ DLQ Engine |
+ | - Resend REST SDK     |        | - Nodemailer Transport|        | - Google Cloud FCM |   | - `email_dlq`     |
+ | - HTML / Attachments  |        | - RFC 5322 Standard   |        | - APNs / FCM Push  |   | - `push_dlq`      |
+ +-----------------------+        +-----------------------+        +--------------------+   +-------------------+
+=================================================================================================================
+```
+
+---
+
+### 2. Visual High-Level Design (HLD) Architecture Diagram (Mermaid)
 
 ```mermaid
 flowchart TD
     %% Client Tier
     subgraph ClientTier ["1. Client & Upstream Microservices Tier"]
         ClientWeb["Web Application"]
-        ClientMobile["Mobile App"]
+        ClientMobile["Mobile App (iOS / Android)"]
         Microservices["Backend Microservices\n(Auth, Billing, Orders)"]
     end
 
@@ -193,7 +268,7 @@ flowchart TD
 
 ---
 
-### 2. End-to-End Sequence & Request Lifecycle Diagram
+### 3. End-to-End Sequence & Request Lifecycle Diagram
 
 ```mermaid
 sequenceDiagram
