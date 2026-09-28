@@ -13,6 +13,8 @@
     "worker:email:bulk": "WORKER_TYPE=email_bulk ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
     "worker:push:critical": "WORKER_TYPE=push_critical ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
     "worker:push:bulk": "WORKER_TYPE=push_bulk ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:sms:critical": "WORKER_TYPE=sms_critical ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
+    "worker:sms:bulk": "WORKER_TYPE=sms_bulk ts-node-dev --respawn --transpile-only src/workers/worker-runner.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

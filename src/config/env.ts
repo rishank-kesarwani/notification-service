@@ -30,11 +30,19 @@ const envSchema = z.object({
   FCM_CLIENT_EMAIL: z.string().optional().default(''),
   FCM_PRIVATE_KEY: z.string().optional().default(''),
 
+  // SMS Configuration (Primary: httpSMS, Fallback: TextBee)
+  HTTPSMS_API_KEY: z.string().optional().default(''),
+  HTTPSMS_FROM_NUMBER: z.string().optional().default(''),
+  TEXTBEE_API_KEY: z.string().optional().default(''),
+  TEXTBEE_DEVICE_ID: z.string().optional().default(''),
+
   // Rate Limiting Defaults
   EMAIL_RATE_LIMIT_MAX: z.coerce.number().default(10), // Max requests per window
   EMAIL_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(1000), // Window in ms (1s)
   PUSH_RATE_LIMIT_MAX: z.coerce.number().default(50),
   PUSH_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(1000),
+  SMS_RATE_LIMIT_MAX: z.coerce.number().default(20),
+  SMS_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(1000),
 
   // Idempotency TTL
   IDEMPOTENCY_TTL_SECONDS: z.coerce.number().default(300), // 5 minutes

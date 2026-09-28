@@ -5,6 +5,8 @@ import {
   EmailBulkWorker,
   PushCriticalWorker,
   PushBulkWorker,
+  SmsCriticalWorker,
+  SmsBulkWorker,
 } from './index';
 
 const workerType = process.env.WORKER_TYPE || process.argv[2] || 'all';
@@ -15,6 +17,8 @@ const emailCriticalWorker = new EmailCriticalWorker();
 const emailBulkWorker = new EmailBulkWorker();
 const pushCriticalWorker = new PushCriticalWorker();
 const pushBulkWorker = new PushBulkWorker();
+const smsCriticalWorker = new SmsCriticalWorker();
+const smsBulkWorker = new SmsBulkWorker();
 
 const activeWorkers: { name: string; close: () => Promise<void> }[] = [];
 
@@ -36,6 +40,16 @@ if (workerType === 'all' || workerType === 'push_critical' || workerType === 'pu
 if (workerType === 'all' || workerType === 'push_bulk' || workerType === 'push:bulk') {
   pushBulkWorker.start();
   activeWorkers.push({ name: 'PushBulkWorker', close: () => pushBulkWorker.close() });
+}
+
+if (workerType === 'all' || workerType === 'sms_critical' || workerType === 'sms:critical') {
+  smsCriticalWorker.start();
+  activeWorkers.push({ name: 'SmsCriticalWorker', close: () => smsCriticalWorker.close() });
+}
+
+if (workerType === 'all' || workerType === 'sms_bulk' || workerType === 'sms:bulk') {
+  smsBulkWorker.start();
+  activeWorkers.push({ name: 'SmsBulkWorker', close: () => smsBulkWorker.close() });
 }
 
 logger.info(

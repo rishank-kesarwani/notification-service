@@ -10,6 +10,7 @@ import {
   NotificationChannel,
   PushJobData,
   QueueName,
+  SmsJobData,
 } from '../types/notification';
 import { CreateNotificationInput, UserPreferenceInput } from '../types/zod-schemas';
 
@@ -21,7 +22,7 @@ export class NotificationController {
   async ingestNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const payload = req.body as CreateNotificationInput;
-      const { priority, channels, recipient, email, push, metadata, idempotencyKey } = payload;
+      const { priority, channels, recipient, email, push, sms, metadata, idempotencyKey } = payload;
       const notificationId = `notif_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
       // 1. Check Distributed Idempotency via Redis
@@ -123,6 +124,26 @@ export class NotificationController {
           const enqueued = await queueRegistry.enqueuePush(pushJobData);
           enqueuedChannels.push({
             channel: 'PUSH',
+            queue: enqueued.queueName,
+            jobId: enqueued.jobId,
+          });
+        }
+
+        if (channel === 'SMS' && sms) {
+          const smsJobData: SmsJobData = {
+            notificationId,
+            idempotencyKey,
+            priority,
+            channel: 'SMS',
+            recipient,
+            sms,
+            metadata,
+            createdAt,
+          };
+
+          const enqueued = await queueRegistry.enqueueSms(smsJobData);
+          enqueuedChannels.push({
+            channel: 'SMS',
             queue: enqueued.queueName,
             jobId: enqueued.jobId,
           });

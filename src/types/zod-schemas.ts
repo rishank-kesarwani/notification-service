@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
-export const ChannelEnum = z.enum(['EMAIL', 'PUSH']);
+export const ChannelEnum = z.enum(['EMAIL', 'PUSH', 'SMS']);
 export const PriorityEnum = z.enum(['CRITICAL', 'BULK']);
 
 export const RecipientSchema = z.object({
   userId: z.string().min(1, 'userId is required'),
   email: z.string().email('Invalid email address format').optional(),
   pushToken: z.string().min(1, 'pushToken cannot be empty').optional(),
+  phone: z.string().min(1, 'phone cannot be empty').optional(),
 });
 
 export const EmailAttachmentSchema = z
@@ -43,6 +44,12 @@ export const PushPayloadSchema = z.object({
   imageUrl: z.string().url('Invalid image URL format').optional(),
 });
 
+export const SmsPayloadSchema = z.object({
+  to: z.string().optional(),
+  message: z.string().min(1, 'SMS message is required'),
+  from: z.string().optional(),
+});
+
 export const CreateNotificationSchema = z
   .object({
     idempotencyKey: z
@@ -53,11 +60,12 @@ export const CreateNotificationSchema = z
     priority: PriorityEnum.default('BULK'),
     channels: z
       .array(ChannelEnum)
-      .min(1, 'At least one channel (EMAIL or PUSH) must be specified')
+      .min(1, 'At least one channel (EMAIL, PUSH, or SMS) must be specified')
       .transform((val) => Array.from(new Set(val))),
     recipient: RecipientSchema,
     email: EmailPayloadSchema.optional(),
     push: PushPayloadSchema.optional(),
+    sms: SmsPayloadSchema.optional(),
     metadata: z.record(z.unknown()).optional(),
   })
   .superRefine((data, ctx) => {
@@ -94,14 +102,34 @@ export const CreateNotificationSchema = z
         });
       }
     }
+
+    if (data.channels.includes('SMS')) {
+      const recipientPhone = data.sms?.to || data.recipient.phone;
+      if (!recipientPhone) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Recipient phone number is required when SMS channel is requested',
+          path: ['recipient', 'phone'],
+        });
+      }
+      if (!data.sms) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'SMS payload is required when SMS channel is requested',
+          path: ['sms'],
+        });
+      }
+    }
   });
 
 export const UserPreferenceSchema = z.object({
   userId: z.string().min(1),
   emailOptOut: z.boolean().default(false),
   pushOptOut: z.boolean().default(false),
+  smsOptOut: z.boolean().default(false),
   bulkOptOut: z.boolean().default(false),
 });
 
 export type CreateNotificationInput = z.infer<typeof CreateNotificationSchema>;
 export type UserPreferenceInput = z.infer<typeof UserPreferenceSchema>;
+

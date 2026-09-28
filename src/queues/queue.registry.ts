@@ -6,6 +6,8 @@ import {
   EmailQueueName,
   PushJobData,
   PushQueueName,
+  SmsJobData,
+  SmsQueueName,
   QueueName,
 } from '../types/notification';
 
@@ -50,6 +52,10 @@ export class QueueRegistry {
   private pushBulkQueue: Queue<PushJobData>;
   private pushDlq: Queue<PushJobData>;
 
+  private smsCriticalQueue: Queue<SmsJobData>;
+  private smsBulkQueue: Queue<SmsJobData>;
+  private smsDlq: Queue<SmsJobData>;
+
   constructor() {
     // Independent BullMQ connections for each dedicated queue
     this.emailCriticalQueue = new Queue<EmailJobData>('email_critical', {
@@ -80,6 +86,20 @@ export class QueueRegistry {
       connection: createBullMQRedisConnection(),
     });
 
+    this.smsCriticalQueue = new Queue<SmsJobData>('sms_critical', {
+      connection: createBullMQRedisConnection(),
+      defaultJobOptions: CRITICAL_JOB_OPTIONS,
+    });
+
+    this.smsBulkQueue = new Queue<SmsJobData>('sms_bulk', {
+      connection: createBullMQRedisConnection(),
+      defaultJobOptions: BULK_JOB_OPTIONS,
+    });
+
+    this.smsDlq = new Queue<SmsJobData>('sms_dlq', {
+      connection: createBullMQRedisConnection(),
+    });
+
     logger.info('BullMQ Queue Registry initialized with dedicated channel queues');
   }
 
@@ -105,6 +125,18 @@ export class QueueRegistry {
 
   public getPushDlq(): Queue<PushJobData> {
     return this.pushDlq;
+  }
+
+  public getSmsCriticalQueue(): Queue<SmsJobData> {
+    return this.smsCriticalQueue;
+  }
+
+  public getSmsBulkQueue(): Queue<SmsJobData> {
+    return this.smsBulkQueue;
+  }
+
+  public getSmsDlq(): Queue<SmsJobData> {
+    return this.smsDlq;
   }
 
   /**
@@ -154,6 +186,29 @@ export class QueueRegistry {
   }
 
   /**
+   * Route and enqueue sms job based on priority tier
+   */
+  async enqueueSms(jobData: SmsJobData): Promise<{ queueName: SmsQueueName; jobId: string }> {
+    const queueName: SmsQueueName =
+      jobData.priority === 'CRITICAL' ? 'sms_critical' : 'sms_bulk';
+    const queue =
+      jobData.priority === 'CRITICAL' ? this.smsCriticalQueue : this.smsBulkQueue;
+
+    const job = await queue.add(
+      `send_sms_${jobData.notificationId}`,
+      jobData,
+      jobData.priority === 'CRITICAL' ? CRITICAL_JOB_OPTIONS : BULK_JOB_OPTIONS
+    );
+
+    logger.info(
+      { notificationId: jobData.notificationId, queueName, jobId: job.id },
+      'SMS job added to queue'
+    );
+
+    return { queueName, jobId: job.id || jobData.notificationId };
+  }
+
+  /**
    * Move failed job into Dead Letter Queue
    */
   async moveToEmailDlq(jobData: EmailJobData, errorReason: string): Promise<void> {
@@ -182,6 +237,20 @@ export class QueueRegistry {
   }
 
   /**
+   * Move failed SMS job into Dead Letter Queue
+   */
+  async moveToSmsDlq(jobData: SmsJobData, errorReason: string): Promise<void> {
+    logger.warn(
+      { notificationId: jobData.notificationId, errorReason },
+      'Moving failed SMS job to sms_dlq'
+    );
+    await this.smsDlq.add(`dlq_sms_${jobData.notificationId}`, {
+      ...jobData,
+      metadata: { ...(jobData.metadata || {}), dlqReason: errorReason, dlqTimestamp: new Date().toISOString() },
+    });
+  }
+
+  /**
    * Collect metrics from all queues
    */
   async getMetrics(): Promise<Record<QueueName, { waiting: number; active: number; completed: number; failed: number; delayed: number }>> {
@@ -192,6 +261,9 @@ export class QueueRegistry {
       { name: 'push_critical', queue: this.pushCriticalQueue },
       { name: 'push_bulk', queue: this.pushBulkQueue },
       { name: 'push_dlq', queue: this.pushDlq },
+      { name: 'sms_critical', queue: this.smsCriticalQueue },
+      { name: 'sms_bulk', queue: this.smsBulkQueue },
+      { name: 'sms_dlq', queue: this.smsDlq },
     ];
 
     const metrics = {} as Record<QueueName, { waiting: number; active: number; completed: number; failed: number; delayed: number }>;
@@ -221,9 +293,13 @@ export class QueueRegistry {
       this.pushCriticalQueue.close(),
       this.pushBulkQueue.close(),
       this.pushDlq.close(),
+      this.smsCriticalQueue.close(),
+      this.smsBulkQueue.close(),
+      this.smsDlq.close(),
     ]);
     logger.info('All BullMQ queues closed successfully');
   }
 }
 
 export const queueRegistry = new QueueRegistry();
+

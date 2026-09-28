@@ -26,6 +26,7 @@ export class UserPreferenceService {
       userId,
       emailOptOut: false,
       pushOptOut: false,
+      smsOptOut: false,
       bulkOptOut: false,
     };
 
@@ -62,6 +63,10 @@ export class UserPreferenceService {
 
     if (channel === 'PUSH' && preferences.pushOptOut) {
       return { allowed: false, reason: 'User has opted out of all PUSH notifications' };
+    }
+
+    if (channel === 'SMS' && preferences.smsOptOut) {
+      return { allowed: false, reason: 'User has opted out of all SMS notifications' };
     }
 
     // Bulk opt-out only applies to BULK priority

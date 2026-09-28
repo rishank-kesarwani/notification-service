@@ -2,6 +2,7 @@ import { NotificationChannel } from '../../types/notification';
 import { EmailNotificationStrategy } from './email.strategy';
 import { INotificationChannelStrategy } from './notification-strategy.interface';
 import { PushNotificationStrategy } from './push.strategy';
+import { SmsNotificationStrategy } from './sms.strategy';
 
 export class NotificationStrategyRegistry {
   private strategies: Map<NotificationChannel, INotificationChannelStrategy> = new Map();
@@ -9,6 +10,7 @@ export class NotificationStrategyRegistry {
   constructor() {
     this.registerStrategy(new EmailNotificationStrategy());
     this.registerStrategy(new PushNotificationStrategy());
+    this.registerStrategy(new SmsNotificationStrategy());
   }
 
   public registerStrategy(strategy: INotificationChannelStrategy): void {
@@ -31,16 +33,24 @@ export class NotificationStrategyRegistry {
     return this.getStrategy<PushNotificationStrategy>('PUSH');
   }
 
+  public getSmsStrategy(): SmsNotificationStrategy {
+    return this.getStrategy<SmsNotificationStrategy>('SMS');
+  }
+
   public getAllCircuitBreakerDiagnostics() {
     const emailStrategy = this.getEmailStrategy();
     const pushStrategy = this.getPushStrategy();
+    const smsStrategy = this.getSmsStrategy();
 
     return [
       emailStrategy.resendCircuitBreaker.getDiagnostics(),
       emailStrategy.smtpCircuitBreaker.getDiagnostics(),
       pushStrategy.fcmCircuitBreaker.getDiagnostics(),
+      smsStrategy.httpSmsCircuitBreaker.getDiagnostics(),
+      smsStrategy.textBeeCircuitBreaker.getDiagnostics(),
     ];
   }
 }
 
 export const strategyRegistry = new NotificationStrategyRegistry();
+

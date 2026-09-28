@@ -1,15 +1,17 @@
-export type NotificationChannel = 'EMAIL' | 'PUSH';
+export type NotificationChannel = 'EMAIL' | 'PUSH' | 'SMS';
 
 export type NotificationPriority = 'CRITICAL' | 'BULK';
 
 export type EmailQueueName = 'email_critical' | 'email_bulk' | 'email_dlq';
 export type PushQueueName = 'push_critical' | 'push_bulk' | 'push_dlq';
-export type QueueName = EmailQueueName | PushQueueName;
+export type SmsQueueName = 'sms_critical' | 'sms_bulk' | 'sms_dlq';
+export type QueueName = EmailQueueName | PushQueueName | SmsQueueName;
 
 export interface NotificationRecipient {
   userId: string;
   email?: string;
   pushToken?: string;
+  phone?: string;
 }
 
 export interface EmailAttachment {
@@ -36,6 +38,12 @@ export interface PushPayload {
   imageUrl?: string;
 }
 
+export interface SmsPayload {
+  to?: string;
+  message: string;
+  from?: string;
+}
+
 export interface NotificationRequestPayload {
   idempotencyKey?: string;
   priority: NotificationPriority;
@@ -43,8 +51,11 @@ export interface NotificationRequestPayload {
   recipient: NotificationRecipient;
   email?: EmailPayload;
   push?: PushPayload;
+  sms?: SmsPayload;
   metadata?: Record<string, unknown>;
 }
+
+export type IngestNotificationPayload = NotificationRequestPayload;
 
 export interface BaseJobData {
   notificationId: string;
@@ -66,7 +77,12 @@ export interface PushJobData extends BaseJobData {
   push: PushPayload;
 }
 
-export type ChannelJobData = EmailJobData | PushJobData;
+export interface SmsJobData extends BaseJobData {
+  channel: 'SMS';
+  sms: SmsPayload;
+}
+
+export type ChannelJobData = EmailJobData | PushJobData | SmsJobData;
 
 export interface ProviderResponse {
   success: boolean;
@@ -80,6 +96,7 @@ export interface UserPreference {
   userId: string;
   emailOptOut: boolean;
   pushOptOut: boolean;
+  smsOptOut: boolean;
   bulkOptOut: boolean;
 }
 
@@ -98,3 +115,4 @@ export interface IngestionResponse {
     reason: string;
   }[];
 }
+
