@@ -9,8 +9,8 @@ export class EmailFallbackService {
   private fallbackProvider: IEmailProvider;
 
   constructor(
-    primaryProvider: IEmailProvider = new SmtpEmailProvider(),
-    fallbackProvider: IEmailProvider = new ResendEmailProvider()
+    primaryProvider: IEmailProvider = new ResendEmailProvider(),
+    fallbackProvider: IEmailProvider = new SmtpEmailProvider()
   ) {
     this.primaryProvider = primaryProvider;
     this.fallbackProvider = fallbackProvider;

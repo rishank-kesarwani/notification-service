@@ -23,9 +23,9 @@ export class SmtpEmailProvider implements IEmailProvider {
         greetingTimeout: 10000,
         socketTimeout: 15000,
       });
-      logger.info({ host: env.SMTP_HOST, port: env.SMTP_PORT }, 'Primary SMTP transporter initialized');
+      logger.info({ host: env.SMTP_HOST, port: env.SMTP_PORT }, 'SMTP fallback transporter initialized');
     } else {
-      logger.warn('SMTP credentials not configured. SMTP provider will fail over to fallback.');
+      logger.warn('SMTP credentials not configured. SMTP fallback will fail if invoked.');
     }
   }
 
@@ -44,7 +44,7 @@ export class SmtpEmailProvider implements IEmailProvider {
 
     logger.debug(
       { notificationId, to: recipient.email, from: fromAddress, provider: this.name },
-      'Attempting to send email via SMTP primary provider'
+      'Attempting to send email via SMTP fallback provider'
     );
 
     const info = await this.transporter.sendMail({
@@ -67,14 +67,14 @@ export class SmtpEmailProvider implements IEmailProvider {
 
     logger.info(
       { notificationId, messageId: info.messageId, response: info.response, provider: this.name },
-      'Email successfully sent via SMTP'
+      'Email successfully sent via SMTP fallback'
     );
 
     return {
       success: true,
       provider: this.name,
       messageId: info.messageId,
-      fallbackUsed: false,
+      fallbackUsed: true,
     };
   }
 }

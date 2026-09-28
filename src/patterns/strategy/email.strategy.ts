@@ -15,27 +15,27 @@ export class EmailNotificationStrategy implements INotificationChannelStrategy<E
   private fallbackProvider: IEmailProvider;
 
   // Circuit Breakers for each downstream provider
-  public readonly smtpCircuitBreaker: CircuitBreaker;
   public readonly resendCircuitBreaker: CircuitBreaker;
+  public readonly smtpCircuitBreaker: CircuitBreaker;
 
   constructor(
-    primaryProvider: IEmailProvider = new SmtpEmailProvider(),
-    fallbackProvider: IEmailProvider = new ResendEmailProvider()
+    primaryProvider: IEmailProvider = new ResendEmailProvider(),
+    fallbackProvider: IEmailProvider = new SmtpEmailProvider()
   ) {
     this.primaryProvider = primaryProvider;
     this.fallbackProvider = fallbackProvider;
-
-    this.smtpCircuitBreaker = new CircuitBreaker({
-      name: 'Nodemailer_SMTP_Breaker',
-      failureThreshold: 3,
-      recoveryTimeoutMs: 30000,
-      successThreshold: 2,
-    });
 
     this.resendCircuitBreaker = new CircuitBreaker({
       name: 'Resend_API_Breaker',
       failureThreshold: 3, // Trip after 3 consecutive failures
       recoveryTimeoutMs: 20000, // 20s cooldown
+      successThreshold: 2,
+    });
+
+    this.smtpCircuitBreaker = new CircuitBreaker({
+      name: 'Nodemailer_SMTP_Breaker',
+      failureThreshold: 3,
+      recoveryTimeoutMs: 30000,
       successThreshold: 2,
     });
   }
@@ -55,9 +55,9 @@ export class EmailNotificationStrategy implements INotificationChannelStrategy<E
       throw new Error(`Rate limit exceeded for EMAIL_VENDOR. Retry in ${retryDelay}ms`);
     }
 
-    // 2. Try Primary Provider (Nodemailer SMTP) protected by Circuit Breaker
+    // 2. Try Primary Provider (Resend) protected by Circuit Breaker
     try {
-      return await this.smtpCircuitBreaker.execute(async () => {
+      return await this.resendCircuitBreaker.execute(async () => {
         return await this.primaryProvider.send({
           recipient,
           email,
@@ -71,14 +71,14 @@ export class EmailNotificationStrategy implements INotificationChannelStrategy<E
         {
           notificationId,
           primaryError: primaryMsg,
-          smtpCircuitState: this.smtpCircuitBreaker.getState(),
+          resendCircuitState: this.resendCircuitBreaker.getState(),
         },
-        'Primary email provider (SMTP) failed or circuit OPEN. Failing over to Resend...'
+        'Primary email provider failed or circuit OPEN. Failing over to Nodemailer SMTP...'
       );
 
-      // 3. Failover to Fallback Provider (Resend) protected by Circuit Breaker
+      // 3. Failover to Fallback Provider (SMTP) protected by Circuit Breaker
       try {
-        const fallbackResult = await this.resendCircuitBreaker.execute(async () => {
+        const fallbackResult = await this.smtpCircuitBreaker.execute(async () => {
           return await this.fallbackProvider.send({
             recipient,
             email,
@@ -113,4 +113,5 @@ export class EmailNotificationStrategy implements INotificationChannelStrategy<E
     }
   }
 }
+
 

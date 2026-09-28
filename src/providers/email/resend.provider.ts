@@ -12,7 +12,7 @@ export class ResendEmailProvider implements IEmailProvider {
     if (env.RESEND_API_KEY) {
       this.resend = new Resend(env.RESEND_API_KEY);
     } else {
-      logger.warn('Resend API key is not configured.');
+      logger.warn('Resend API key is not configured. Resend provider will fail over to fallback.');
     }
   }
 
@@ -31,7 +31,7 @@ export class ResendEmailProvider implements IEmailProvider {
 
     logger.debug(
       { notificationId, to: recipient.email, from: fromAddress, provider: this.name },
-      'Attempting to send email via Resend fallback provider'
+      'Attempting to send email via Resend primary provider'
     );
 
     const emailPayload = {
@@ -74,7 +74,7 @@ export class ResendEmailProvider implements IEmailProvider {
       success: true,
       provider: this.name,
       messageId: response.data?.id,
-      fallbackUsed: true,
+      fallbackUsed: false,
     };
   }
 }
