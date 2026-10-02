@@ -6,10 +6,18 @@ dotenv.config();
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  API_KEY: z.string().default('test-api-key-12345'),
+  // Application-Specific Service Authentication Keys
+  NOTIFICATION_TRAVEL_API_KEY: z.string().optional(),
+  NOTIFICATION_MOVIE_API_KEY: z.string().optional(),
+  NOTIFICATION_SPORTS_API_KEY: z.string().optional(),
+  NOTIFICATION_STUDY_API_KEY: z.string().optional(),
+
+  // Legacy Fallback API Key (for backward compatibility during migration)
+  API_KEY: z.string().optional().default('test-api-key-12345'),
   JWT_SECRET: z.string().default('default-super-secret-jwt-key-for-development'),
 
-  // Redis Configuration
+  // Redis Configuration (REDIS_URL is canonical; REDIS_HOST/PORT/PASSWORD as fallback)
+  REDIS_URL: z.string().optional(),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
@@ -46,6 +54,22 @@ const envSchema = z.object({
 
   // Idempotency TTL
   IDEMPOTENCY_TTL_SECONDS: z.coerce.number().default(300), // 5 minutes
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production') {
+    const hasDynamicAppKey = Object.keys(process.env).some(
+      (k) => /^NOTIFICATION_[A-Z0-9_]+_API_KEY$/i.test(k) && Boolean(process.env[k]?.trim())
+    );
+    const hasConfiguredLegacyKey = Boolean(data.API_KEY && data.API_KEY !== 'test-api-key-12345');
+
+    if (!hasDynamicAppKey && !hasConfiguredLegacyKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Production requires at least one configured application API key (e.g. NOTIFICATION_TRAVEL_API_KEY, NOTIFICATION_RESUME_API_KEY, etc.) or non-default API_KEY',
+        path: ['NOTIFICATION_TRAVEL_API_KEY'],
+      });
+    }
+  }
 });
 
 const _env = envSchema.safeParse(process.env);

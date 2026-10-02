@@ -26,6 +26,7 @@ export const createApp = (): Application => {
           statusCode: res.statusCode,
           durationMs,
           ip: req.ip,
+          serviceName: req.user?.serviceName,
         },
         'HTTP Request Processed'
       );
