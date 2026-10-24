@@ -240,4 +240,32 @@ describe('Notification Service Authentication & Redis Tests', () => {
       env.REDIS_PASSWORD = originalPassword;
     }
   });
+
+  it('16. Redis connects via REDIS_URL without depending on REDIS_HOST or REDIS_PASSWORD', () => {
+    const originalUrl = env.REDIS_URL;
+    const originalHost = env.REDIS_HOST;
+    const originalPort = env.REDIS_PORT;
+    const originalPassword = env.REDIS_PASSWORD;
+
+    try {
+      env.REDIS_URL = 'redis://default:cloudsecret@cloud-managed-redis:6379/2';
+      // Clear host/password to simulate cloud deployment with only REDIS_URL set
+      (env as any).REDIS_HOST = undefined;
+      (env as any).REDIS_PASSWORD = undefined;
+      (env as any).REDIS_PORT = undefined;
+
+      const client = createRedisConnection();
+      assert.equal(client.options.host, 'cloud-managed-redis');
+      assert.equal(client.options.port, 6379);
+      assert.equal(client.options.password, 'cloudsecret');
+      assert.equal(client.options.db, 2);
+      client.disconnect();
+    } finally {
+      env.REDIS_URL = originalUrl;
+      env.REDIS_HOST = originalHost;
+      env.REDIS_PORT = originalPort;
+      env.REDIS_PASSWORD = originalPassword;
+    }
+  });
 });
+

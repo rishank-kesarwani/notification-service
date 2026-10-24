@@ -16,11 +16,12 @@ const envSchema = z.object({
   API_KEY: z.string().optional().default('test-api-key-12345'),
   JWT_SECRET: z.string().default('default-super-secret-jwt-key-for-development'),
 
-  // Redis Configuration (REDIS_URL is canonical; REDIS_HOST/PORT/PASSWORD as fallback)
+  // Redis Configuration (REDIS_URL connects directly without depending on REDIS_HOST/PASSWORD)
   REDIS_URL: z.string().optional(),
-  REDIS_HOST: z.string().default('localhost'),
-  REDIS_PORT: z.coerce.number().default(6379),
+  REDIS_HOST: z.string().optional().default('localhost'),
+  REDIS_PORT: z.coerce.number().optional().default(6379),
   REDIS_PASSWORD: z.string().optional(),
+  REDIS_DB: z.coerce.number().optional().default(0),
 
   // Primary Email Configuration (Resend)
   RESEND_API_KEY: z.string().optional().default(''),

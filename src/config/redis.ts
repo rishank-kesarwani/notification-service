@@ -17,16 +17,25 @@ export const getBaseRedisOptions = (): RedisOptions => ({
 });
 
 export const createRedisConnection = (): Redis => {
+  const redisUrl = (env.REDIS_URL || process.env.REDIS_URL || '').trim();
   const baseOptions = getBaseRedisOptions();
 
-  if (env.REDIS_URL) {
-    return new Redis(env.REDIS_URL, baseOptions);
+  if (redisUrl) {
+    return new Redis(redisUrl, {
+      ...baseOptions,
+    });
   }
 
+  const host = (env.REDIS_HOST || process.env.REDIS_HOST || 'localhost').trim() || 'localhost';
+  const port = Number(env.REDIS_PORT || process.env.REDIS_PORT || 6379);
+  const password = env.REDIS_PASSWORD || process.env.REDIS_PASSWORD || undefined;
+  const db = Number(env.REDIS_DB || process.env.REDIS_DB || 0);
+
   return new Redis({
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-    password: env.REDIS_PASSWORD || undefined,
+    host,
+    port,
+    password: password || undefined,
+    db,
     ...baseOptions,
   });
 };
@@ -35,10 +44,13 @@ export const createRedisConnection = (): Redis => {
 export const redisClient = createRedisConnection();
 
 redisClient.on('connect', () => {
-  if (env.REDIS_URL) {
-    logger.info('Redis client connected successfully via canonical REDIS_URL');
+  const redisUrl = (env.REDIS_URL || process.env.REDIS_URL || '').trim();
+  if (redisUrl) {
+    logger.info('Connected to Redis via connection URL');
   } else {
-    logger.info({ host: env.REDIS_HOST, port: env.REDIS_PORT }, 'Redis client connected successfully via host/port fallback');
+    const host = (env.REDIS_HOST || process.env.REDIS_HOST || 'localhost').trim() || 'localhost';
+    const port = Number(env.REDIS_PORT || process.env.REDIS_PORT || 6379);
+    logger.info(`Connected to Redis at ${host}:${port}`);
   }
 });
 
